@@ -129,7 +129,7 @@ bool sendAndWaitResponse(String command, String rsp1, String rsp2, unsigned long
 	return response_ok;
 }
 
-void sendHttp(){
+void sendHttp(String payload){
 	//First attach the MT to the Packet Domain service
 	if(sendAndWaitResponse("AT+CGATT=1", "+CTZV", "OK",5000)){
 		Serial.println( F("Connected to Packet Domain"));
@@ -143,14 +143,19 @@ void sendHttp(){
 			if(sendAndWaitResponse("AT+CIPSTART=\"TCP\",\"altus.pythonanywhere.com\",80","CONNECT OK","OK",6000)){
 				Serial.println(F("Connected to site... sending data"));
 				if(sendAndWaitResponse("AT+CIPSEND",">","OK",6000)){
-					A7.println("GET / HTTP/1.1");
+					A7.println("POST /location?"+payload+" HTTP/1.1");
 					//A7.print("\r\n");
 					A7.println("HOST: altus.pythonanywhere.com");
+					A7.println("User-Agent: A7_Track");
+					//A7.println(data);
+					//Serial.println(data.length());
+					A7.println("Content-Length: " + payload.length());
+					A7.println(payload);
 					//A7.print("\r\n");
 					//A7.print("\r\n");
 					A7.println("");
 					A7.print("\x1a");
-					
+					delay(1000);
 				}
 				//sendAndWaitResponse("AT+CGACT=0","OK","OK",2500);
 				//sendAndWaitResponse("AT+CGATT=0","OK","OK",2500);
@@ -332,9 +337,27 @@ void loop()
 
 				Serial.print(F("Speed: "));
 				Serial.println(fix.speed_kph());
-				last_state_time = millis();
+				
 				
 				echoA7();
+
+				String location_data = "";
+				location_data += "lat=" + String(fix.latitude(),6) + ",";
+				location_data += "lng=" + String(fix.longitude(),6) + ",";
+				location_data += "alt=" + String(fix.alt.whole) + ",";
+				location_data += "dt=" + String(fix.dateTime) + ",";
+				location_data += "sat=" + String(fix.satellites) + ",";
+				location_data += "spd=" + String(fix.speed_kph()) + ",";
+
+				sendHttp(location_data);
+
+				if(waitFor("200","Peanuts",10000)){
+					Serial.println("Successfully sent data to server");
+				}
+				sendAndWaitResponse("AT+CIPCLOSE","OK","OK", 3000);
+				sendAndWaitResponse("AT+CGACT=0","OK","OK",3000);
+
+				last_state_time = millis();
 				state = IDLE;
 
 				//Should GPS be switched off? if running of a small battery it should definately be
@@ -342,14 +365,9 @@ void loop()
 			break;
 
 		case STOP:
+			
 			echoA7();
 			if(millis() - last_state_time > 10000){
-				sendHttp();
-				if(waitFor("200","Peanuts",10000)){
-					Serial.println("Successfully sent data to server");
-				}
-				sendAndWaitResponse("AT+CIPCLOSE","OK","OK", 3000);
-				sendAndWaitResponse("AT+CGACT=0","OK","OK",3000);
 				state = WAIT_FOR_REG;		
 			}
 			
