@@ -2,23 +2,28 @@
  * Originally i though I'd delve into C / C++ and learn all about how
  * not to use String and memory fragmentation and all that. Having no C
  * background and not being pertinent to my work, I chose the path of
- * least resistance (for now).
- *
- * Quite honestly, If this goes any further than a simply POC / hobby
- * project, it could be considered. For now, hail to the String!
+ * least resistance (for now). Quite honestly, If this goes any further than 
+ * a simply POC / hobby project, it could be considered. 
+ * For now, hail to the String!
  *
  * Trawling the Internet for ideas lead to this implementation of a
- * car tracking solution using the A7 GPS / GSM shield by elecrow
+ * car tracking solution using the A7 AI Thinker GPS / GSM shield by elecrow
  * implementing the AT command set.
  *
  * To handle the GPS NEMEA sentences, we don't reinvent the wheel,
  * NeoGPS does a fantastic job already and is fast and small (since we'll be using
- * alot of Strings!) : https://github.com/SlashDevin/NeoGPS
+ * alot of Strings, we need some space for the "fragmentation")
+ * https://github.com/SlashDevin/NeoGPS
  * 
  * The epoch returned is since 2000-01-01 00:00:00 and is 946684800 in 'ticks'
  * since the unix epoch which is 1970-01-01. this should be added to the value
- * returned
+ * returned. i.e 
  *
+ * Note the delay after CGDCONT in httpSend(). This is explicit and should not be
+ * removed. You will get errors.
+ * 
+ * To control the state machine, we rely on millis(). Note that this will reset
+ * in about 50 days. 
  */
 
 //Includes
@@ -41,9 +46,7 @@ enum state_t {
 	INIT,
 	IDLE,
 	WAIT_FOR_REG,
-	ACTIVATE_GPS,
 	GPS_READ_ENABLE,
-	GPS_READING,
 	GPS_PROCESSING,
 	UPLOAD_GPS_DATA,
 	STOP
@@ -57,7 +60,15 @@ unsigned long last_state_time;
 const int STARTUP_DELAY = 30000;
 const int GPS_READ_DELAY = 10000;
 
+//TODO: parameterize the host and port
+
+
+/*
+ * Methods
+ */
+
 String readA7Serial(){
+	//Simply reads what's in the A7 buffer and returns it
 	String incoming_packed = "";
 	char incoming;
 
@@ -68,10 +79,8 @@ String readA7Serial(){
 	return incoming_packed;
 }
 
-/*
- * Methods
- */
 bool waitFor(String rsp1, String rsp2, unsigned long timeout){
+	//Wait for response untill timeout
 	bool response_ok = false;
 	String incoming_data = "";
 	unsigned long wait_start;
@@ -130,6 +139,12 @@ bool sendAndWaitResponse(String command, String rsp1, String rsp2, unsigned long
 }
 
 void sendHttp(String payload){
+	/*
+	* Sends a well formatted HTTP Post command to an arbitrary server
+	* The sequence of commands to the the A7 must be
+	* CGATT -> CGDCONT -> CGACT -> CIPSTART -> CIPSEND -> CIPCLOSE
+	*/
+
 	//First attach the MT to the Packet Domain service
 	if(sendAndWaitResponse("AT+CGATT=1", "+CTZV", "OK",5000)){
 		Serial.println( F("Connected to Packet Domain"));
@@ -143,28 +158,21 @@ void sendHttp(String payload){
 			if(sendAndWaitResponse("AT+CIPSTART=\"TCP\",\"altus.pythonanywhere.com\",80","CONNECT OK","OK",6000)){
 				Serial.println(F("Connected to site... sending data"));
 				if(sendAndWaitResponse("AT+CIPSEND",">","OK",6000)){
+					//The HTTP request
 					A7.println("POST /location?"+payload+" HTTP/1.1");
-					//A7.print("\r\n");
 					A7.println("HOST: altus.pythonanywhere.com");
-					A7.println("User-Agent: A7_Track");
-					//A7.println(data);
-					//Serial.println(data.length());
+					A7.println("User-Agent: A7_Track");;
 					A7.println("Content-Length: " + payload.length());
 					A7.println(payload);
-					//A7.print("\r\n");
-					//A7.print("\r\n");
 					A7.println("");
+					//Send Ctrl-Z
 					A7.print("\x1a");
 					delay(1000);
 				}
-				//sendAndWaitResponse("AT+CGACT=0","OK","OK",2500);
-				//sendAndWaitResponse("AT+CGATT=0","OK","OK",2500);
 			} else {
 				Serial.println(F("Unable to connect"));
 			}
 		}
-
-
 	}
 }
 
@@ -235,6 +243,8 @@ void initializeA7Params(){
 			Serial.println(F ("SMS mode set to text (1)") );
 		}
 	}
+	//TODO: Clear out unsolicited sms's except for registration sms if any
+
 }
 
 void setup()
@@ -252,7 +262,7 @@ void loop()
 		case INIT:
 			echoA7();
 			if(millis() - last_state_time >= STARTUP_DELAY){
-				Serial.println("Initializing...");
+				Serial.println(F("Initializing..."));
 				initializeA7Params();
 				state = WAIT_FOR_REG;
 				last_state_time = millis();
@@ -261,7 +271,8 @@ void loop()
 		case WAIT_FOR_REG:
 			/*
 			 * Wait for a registration sms before doing anything else
-			 * Ideally this should be linked to the 
+			 * Ideally this should be linked to the a unique id for the device
+			 * figure this out still
 			 */
 			if(true){
 				//Some stuff happened and now we're here
@@ -352,9 +363,13 @@ void loop()
 				sendHttp(location_data);
 
 				if(waitFor("200","Peanuts",10000)){
-					Serial.println("Successfully sent data to server");
+					Serial.println(F("Successfully sent data to server"));
+				} else {
+					Serial.println(F("Failed sending datat to server"));
 				}
+				//Close the connection to the server
 				sendAndWaitResponse("AT+CIPCLOSE","OK","OK", 3000);
+				//Disable the packet context
 				sendAndWaitResponse("AT+CGACT=0","OK","OK",3000);
 
 				last_state_time = millis();
