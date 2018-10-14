@@ -57,8 +57,11 @@ state_t state = INIT;
 //Placeholder for last stime something happened
 unsigned long last_state_time;
 //Delay so that the module has time to register on the network
-const int STARTUP_DELAY = 30000;
-const int GPS_READ_DELAY = 10000;
+const short int STARTUP_DELAY = 30000;
+//update this to set the log speed (interval * seconds * milliseconds)
+unsigned const int GPS_READ_DELAY = 5 * 60 * 1000;
+
+String location_data = "";
 
 //TODO: parameterize the host and port
 
@@ -330,6 +333,7 @@ void loop()
 			}
 			break;
 		case UPLOAD_GPS_DATA:
+			location_data = "";
 
 			if(millis() - last_state_time > 5000){
 
@@ -349,10 +353,8 @@ void loop()
 				Serial.print(F("Speed: "));
 				Serial.println(fix.speed_kph());
 				
-				
 				echoA7();
 
-				String location_data = "";
 				location_data += "lat=" + String(fix.latitude(),6) + ",";
 				location_data += "lng=" + String(fix.longitude(),6) + ",";
 				location_data += "alt=" + String(fix.alt.whole) + ",";
@@ -362,7 +364,7 @@ void loop()
 
 				sendHttp(location_data);
 
-				if(waitFor("200","Peanuts",10000)){
+				if(waitFor("200","200",10000)){
 					Serial.println(F("Successfully sent data to server"));
 				} else {
 					Serial.println(F("Failed sending datat to server"));
@@ -385,8 +387,6 @@ void loop()
 			if(millis() - last_state_time > 10000){
 				state = WAIT_FOR_REG;		
 			}
-			
-			
 			break;
 	}
 
