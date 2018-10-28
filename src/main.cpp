@@ -33,8 +33,8 @@
 //Defines
 #define A7 Serial1
 #define debug true
-//how often should it log (5 * 60 * 1000)
-#define GPS_READ_DELAY 300000UL
+//how often should it log ie 5 minutes is 300000UL
+#define GPS_READ_DELAY 60000UL
 
 //Setup a NeoGPS instance
 static NMEAGPS gps;
@@ -63,7 +63,7 @@ const short int STARTUP_DELAY = 30000;
 
 String location_data = "";
 
-//TODO: parameterize the host
+//TODO: parameterize the host and don't hardcode the imei. Also, don't use strings
 
 
 /*
@@ -141,12 +141,15 @@ bool sendAndWaitResponse(String command, String rsp1, String rsp2, unsigned long
 	return response_ok;
 }
 
-void sendHttp(String payload){
+void sendHttp(){
 	/*
 	* Sends a well formatted HTTP Post command to an arbitrary server
 	* The sequence of commands to the the A7 must be
 	* CGATT -> CGDCONT -> CGACT -> CIPSTART -> CIPSEND -> CIPCLOSE
 	*/
+
+	String content_length = "Content-Length: ";
+	content_length += location_data.length();
 
 	//First attach the MT to the Packet Domain service
 	if(sendAndWaitResponse("AT+CGATT=1", "+CTZV", "OK",5000)){
@@ -165,10 +168,10 @@ void sendHttp(String payload){
 					A7.println("POST /location HTTP/1.1");
 					A7.println("HOST: altus.pythonanywhere.com");
 					A7.println("User-Agent: A7_Track");
-					A7.println("Content-Length: " + payload.length());
+					A7.println(content_length);
 					A7.println("Content-Type: application/x-www-form-urlencoded");
 					A7.println("");
-					A7.println(payload);
+					A7.println(location_data);
 					A7.println("");
 					//Send Ctrl-Z
 					A7.print("\x1a");
@@ -359,18 +362,21 @@ void loop()
 				
 				echoA7();
 
+				//hardcoded ccid - obviously change this
+				location_data += "ccid=89288000000005165811&";
 				location_data += "lat=" + String(fix.latitude(),6) + "&";
 				location_data += "lng=" + String(fix.longitude(),6) + "&";
 				location_data += "alt=" + String(fix.alt.whole) + "&";
-				location_data += "dt=" + String(fix.dateTime) + "&";
-				location_data += "sat=" + String(fix.satellites) + "&";
+				location_data += "unix_epoch=" + String(fix.dateTime) + "&";
+				//location_data += "sat=" + String(fix.satellites) + "&";
 				location_data += "spd=" + String(fix.speed_kph());
 
-				sendHttp(location_data);
+				sendHttp();
 
 				if(waitFor("200","200",10000)){
 					Serial.println(F("Successfully sent data to server"));
 				} else {
+					//If this happens, it's pretty bad
 					Serial.println(F("Failed sending data to server"));
 				}
 				//Close the connection to the server
@@ -379,7 +385,7 @@ void loop()
 				sendAndWaitResponse("AT+CGACT=0","OK","OK",3000);
 
 				last_state_time = millis();
-				state = STOP;
+				state = IDLE;
 
 				//Should GPS be switched off? if running of a small battery it should definately be
 			}
