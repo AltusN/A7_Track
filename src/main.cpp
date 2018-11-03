@@ -399,11 +399,5 @@ void loop()
 
 	while(Serial.available()){
 		sendAndWaitResponse(Serial.readString(),"","OK",5000);
-
-		// if(sendAndWaitResponse(Serial.readString(), "OK", "OK", 5000)){
-		// 	Serial.println("response is good");
-		// } else{
-		// 	Serial.println("OOOOOPS!");
-		// }
 	}
 }
